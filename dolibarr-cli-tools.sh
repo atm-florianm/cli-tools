@@ -55,6 +55,7 @@ get_direct_subdirs() {
 # Exemple: val_from_conf "dolibarr_main_db_name"
 #
 # @param $1 Nom (complet) de la variable de conf à extraire
+# @param $2 Valeur par défaut si non trouvé
 get_val_from_conf() {
     dol_root="$(get_dolibarr_root)"
     if [[ "$dol_root" == "" ]]; then return; fi
@@ -65,7 +66,7 @@ get_val_from_conf() {
 
     # solution 2 (fonctionne avec n'importe quel conf.php, mais présente un risque
     #             si jamais conf.php fait plus que juste affecter des variables)
-    script="<?php include '$dol_conf_file'; echo \$$1 . \"\n\";"
+    script="<?php include '$dol_conf_file'; if(isset(\$$1)) echo \$$1; else echo \"$2\";"
     #echo "$script"
     echo "$script" | php
 }
