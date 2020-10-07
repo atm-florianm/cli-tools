@@ -111,7 +111,7 @@ mount_dolibarr_database() {
 
     dbname="$(get_val_from_conf dolibarr_main_db_name)"
     dbuser="$(get_val_from_conf dolibarr_main_db_user)"
-    mysqlcom="mysql -u\"$dbuser\""\
+    sqlcomm_import_dump="mysql -u\"$dbuser\""\
         " -p\"\$(get_val_from_conf dolibarr_main_db_pass)\""\
         " \"$dbname\""
 
@@ -149,21 +149,24 @@ mount_database_interactive() {
     file_ext=`expr "$choosen_dump" : "$re_file_ext"`
     dbname="$(get_val_from_conf dolibarr_main_db_name)"
     dbuser="$(get_val_from_conf dolibarr_main_db_user)"
+    dbhost="$(get_val_from_conf dolibarr_main_db_host localhost)"
+    dbcharset="$(get_val_from_conf dolibarr_main_db_character_set utf8)"
+    dbcollation="$(get_val_from_conf dolibarr_main_db_collation utf8_unicode_ci)"
     base_mysqlcom="mysql -u\"$dbuser\"\
          -p\"\$dbpass\"\
          \"$dbname\""
 
     case "$file_ext" in
         gz )
-            mysqlcom=$(printf "gunzip --stdout %s | %s" "$choosen_dump" "$base_mysqlcom");;
+            sqlcomm_import_dump=$(printf "gunzip --stdout %s | %s" "$choosen_dump" "$base_mysqlcom");;
         bz2 )
-            mysqlcom=$(printf "bzcat %s | %s" "$choosen_dump" "$base_mysqlcom");;
+            sqlcomm_import_dump=$(printf "bzcat %s | %s" "$choosen_dump" "$base_mysqlcom");;
         xz )
-            mysqlcom=$(printf "xzcat %s | %s" "$choosen_dump" "$base_mysqlcom");;
+            sqlcomm_import_dump=$(printf "xzcat %s | %s" "$choosen_dump" "$base_mysqlcom");;
         zip )
-            mysqlcom=$(printf "unzip -c %s | %s" "$choosen_dump" "$base_mysqlcom");;
+            sqlcomm_import_dump=$(printf "unzip -c %s | %s" "$choosen_dump" "$base_mysqlcom");;
         sql )
-            mysqlcom=$(printf "%s < %s" "$base_mysqlcom" "$choosen_dump");;
+            sqlcomm_import_dump=$(printf "%s < %s" "$base_mysqlcom" "$choosen_dump");;
     esac
 
     db_prefix="$(get_val_from_conf dolibarr_main_db_prefix)"
@@ -171,11 +174,19 @@ mount_database_interactive() {
     # TODO en fonction des options, donner ces commandes supplémentaires
     sqlcomm_disable_email="UPDATE $db_prefix""const SET value = 1 WHERE name = \"MAIN_DISABLE_ALL_MAILS\";";
     sqlcomm_set_admin_pwd="UPDATE $db_prefix""user SET pass = \"admin\" WHERE rowid > 0;"
-    sqlcomm_set_bgcolor="UPDATE $db_prefix""const SET value = \"c63ed6\" WHERE name = \"THEME_ELDY_BACKBODY\";"
+    sqlcomm_set_bgcolor="UPDATE $db_prefix""const SET value = \"c63ed6\" WHERE name = \"THEME_ELDY_TOPMENU_BACK1\";"
+
+    rootsqlcomm_create_db="CREATE DATABASE $dbname CHARACTER SET $dbcharset COLLATE $dbcollation;"
+    rootsqlcomm_create_db="$rootsqlcomm_create_db""CREATE USER '$dbuser'@'$dbhost' IDENTIFIED BY \\\\\"\$dbpass\\\\\";"
+    rootsqlcomm_create_db="$rootsqlcomm_create_db""GRANT ALL PRIVILEGES ON $dbname.* TO \"$dbuser\"@\"$dbhost\";"
 
 
     color_print red "dbpass=\"\$""(get_val_from_conf dolibarr_main_db_pass)\""
-    color_print red "$mysqlcom"
+
+    r=$(get_yes_no_noncritical o n "Créer la base et l'utilisateur? (o/n)")
+    [[ $r == 'o' ]] && color_print red "sudo mysql -e \"$rootsqlcomm_create_db\""
+
+    color_print red "$sqlcomm_import_dump"
 
     r=$(get_yes_no_noncritical o n "Désactiver tous les e-mails? (o/n)")
     [[ $r == 'o' ]] && color_print red "$base_mysqlcom -e '$sqlcomm_disable_email'"
