@@ -4,13 +4,12 @@
 Fonctions-outils pour la maintenance d’instances dolibarr en bash.
 
 get_dolibarr_root() → cherche la racine dolibarr depuis n'importe quel sous-répertoire
-
-val_from_conf() → extrait une variable du conf.php
-
-list_direct_subdirs()
-
+get_val_from_conf() → extrait une variable du conf.php
+get_direct_subdirs()
+get_apache_user() → donne l'utilisateur apache (la plupart du temps www-data)
 EC
 
+source "user-interaction.lib.sh"
 
 # Fonction pour repérer si on est dans une instance Dolibarr.
 # Pour ça, on cherche un conf.php.
@@ -32,7 +31,7 @@ get_dolibarr_root() {
 # Fonction pour avoir la liste des sous-répertoires directs du répertoire courant
 # (ou, si applicable, du répertoire passé en paramètre)
 # Attention : inclut aussi les répertoires cachés
-list_direct_subdirs() {
+get_direct_subdirs() {
     if [[ "$1" != "" ]]; then
         d="$1"
     else
@@ -56,7 +55,7 @@ list_direct_subdirs() {
 # Exemple: val_from_conf "dolibarr_main_db_name"
 #
 # @param $1 Nom (complet) de la variable de conf à extraire
-val_from_conf() {
+get_val_from_conf() {
     dol_root="$(get_dolibarr_root)"
     if [[ "$dol_root" == "" ]]; then return; fi
     dol_conf_file="$dol_root/htdocs/conf/conf.php"
@@ -71,6 +70,17 @@ val_from_conf() {
     echo "$script" | php
 }
 
+# Retourne l'utilisateur apache (généralement www-data)
+get_apache_user() {
+    # afficher les infos des processus apache2 et httpd (les noms potentiels d’apache)
+    # sed pour filtrer la première colonne
+    # egrep -v pour supprimer UID et root
+    # head -1 pour ne garder qu'une ligne
+    ps -f -C "apache2,httpd" \
+        | sed 's/^\(\S\+\).*/\1/g' \
+        | egrep -v "(UID|root)" \
+        | head -1
+}
 
 
 # TODO
@@ -82,7 +92,93 @@ check_dolibarr_ok() {
     dol_root="$(get_dolibarr_root)"
     if [[ "$dol_root" == "" ]]; then return; fi
 
-    docfolder=$(val_from_conf dolibarr_main_data_root)
+    docfolder=$(get_val_from_conf dolibarr_main_data_root)
     # check documents
+
     
+}
+
+
+# Options:
+#  - nomail = désactivera globalement l'envoi d'e-mails
+#  - color = changera la couleur de fond (pour indiquer
+#            qu'on n'est pas sur la prod)
+# Le nom de la base sera celui défini par le conf.php
+mount_dolibarr_database() {
+
+    # TODO: check if db exists; if not, add command to create it
+
+    dbname="$(get_val_from_conf dolibarr_main_db_name)"
+    dbuser="$(get_val_from_conf dolibarr_main_db_user)"
+    mysqlcom="mysql -u\"$dbuser\""\
+        " -p\"\$(get_val_from_conf dolibarr_main_db_pass)\""\
+        " \"$dbname\""
+
+
+}
+
+mount_database_interactive() {
+    wd="$(pwd)"
+    r=$(get_yes_no_noncritical o n "Should I look for db dumps in documents/admin/backup? (o/n)")
+    documentsdir="$(get_val_from_conf dolibarr_main_data_root)"
+    if [[ "$r" == 'o' ]]; then
+        dumpdir="$documentsdir/admin/backup"
+        cd "$dumpdir"
+    else
+        dumpdir='.'
+    fi
+    declare -A TDump
+    TDump[none]='none'
+    # TODO vérifier automatiquement si xzcat, bzcat, gzcat, unzip sont installés
+    dumps=`ls *.bz2 *.gz *.xz *.sql.zip *.sql 2>/dev/null`
+    cd "$wd" # retour au répertoire d'origine
+    let i=0
+    for dump in $dumps; do
+        let i++
+        TDump[$i]="$dumpdir/$dump"
+        printf "% 2d) %s\n" "$i" "$dump"
+    done
+    read -p "Choix? " choice
+    while [[ -z "${TDump[$choice]}" ]]; do
+        read -p "Choix? " choice
+    done
+    choosen_dump="${TDump[$choice]}"
+    re_file_ext='.*\.\(bz2\|gz\|zip\|xz\|sql\)$'
+    file_ext=`expr "$choosen_dump" : "$re_file_ext"`
+    dbname="$(get_val_from_conf dolibarr_main_db_name)"
+    dbuser="$(get_val_from_conf dolibarr_main_db_user)"
+    base_mysqlcom="mysql -u\"$dbuser\"\
+         -p\"\$dbpass\"\
+         \"$dbname\""
+
+    case "$file_ext" in
+        gz )
+            mysqlcom=$(printf "gunzip --stdout %s | %s" "$choosen_dump" "$base_mysqlcom");;
+        bz2 )
+            mysqlcom=$(printf "bzcat %s | %s" "$choosen_dump" "$base_mysqlcom");;
+        xz )
+            mysqlcom=$(printf "xzcat %s | %s" "$choosen_dump" "$base_mysqlcom");;
+        zip )
+            mysqlcom=$(printf "unzip -c %s | %s" "$choosen_dump" "$base_mysqlcom");;
+        sql )
+            mysqlcom=$(printf "%s < %s" "$base_mysqlcom" "$choosen_dump");;
+    esac
+
+    db_prefix="$(get_val_from_conf dolibarr_main_db_prefix)"
+
+    # TODO en fonction des options, donner ces commandes supplémentaires
+    sqlcomm_disable_email="UPDATE $db_prefix""const SET value = 1 WHERE name = \"MAIN_DISABLE_ALL_MAILS\";";
+    sqlcomm_set_admin_pwd="UPDATE $db_prefix""user SET pass = \"admin\" WHERE rowid > 0;"
+    sqlcomm_set_bgcolor="UPDATE "
+
+
+    echo "dbpass=\"\$""(get_val_from_conf dolibarr_main_db_pass)\""
+    echo "$mysqlcom"
+    echo "$base_mysqlcom -e '$sqlcomm_disable_email'"
+    echo "$base_mysqlcom -e '$sqlcomm_set_admin_pwd'"
+}
+
+mount_database_for_prod() {
+    #
+    echo ""
 }
