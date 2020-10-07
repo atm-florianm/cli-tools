@@ -119,8 +119,9 @@ mount_dolibarr_database() {
 
 mount_database_interactive() {
     wd="$(pwd)"
-    r=$(get_yes_no_noncritical o n "Should I look for db dumps in documents/admin/backup? (o/n)")
     documentsdir="$(get_val_from_conf dolibarr_main_data_root)"
+
+    r=$(get_yes_no_noncritical o n "Faut-il chercher les dumps dans 'admin/backup' du dossier documents? (o = oui; n = chercher dans le répertoire courant)")
     if [[ "$r" == 'o' ]]; then
         dumpdir="$documentsdir/admin/backup"
         cd "$dumpdir"
@@ -169,13 +170,20 @@ mount_database_interactive() {
     # TODO en fonction des options, donner ces commandes supplémentaires
     sqlcomm_disable_email="UPDATE $db_prefix""const SET value = 1 WHERE name = \"MAIN_DISABLE_ALL_MAILS\";";
     sqlcomm_set_admin_pwd="UPDATE $db_prefix""user SET pass = \"admin\" WHERE rowid > 0;"
-    sqlcomm_set_bgcolor="UPDATE "
+    sqlcomm_set_bgcolor="UPDATE $db_prefix""const SET value = \"c63ed6\" WHERE name = \"THEME_ELDY_BACKBODY\";"
 
 
-    echo "dbpass=\"\$""(get_val_from_conf dolibarr_main_db_pass)\""
-    echo "$mysqlcom"
-    echo "$base_mysqlcom -e '$sqlcomm_disable_email'"
-    echo "$base_mysqlcom -e '$sqlcomm_set_admin_pwd'"
+    color_print red "dbpass=\"\$""(get_val_from_conf dolibarr_main_db_pass)\""
+    color_print red "$mysqlcom"
+
+    r=$(get_yes_no_noncritical o n "Désactiver tous les e-mails? (o/n)")
+    [[ $r == 'o' ]] && color_print red "$base_mysqlcom -e '$sqlcomm_disable_email'"
+
+    r=$(get_yes_no_noncritical o n "Remplacer tous les mots de passe par 'admin'? (o/n)")
+    [[ $r == 'o' ]] && color_print red "$base_mysqlcom -e '$sqlcomm_set_admin_pwd'"
+
+    r=$(get_yes_no_noncritical o n "Passer la couleur de fond du bandeau en magenta moche? (o/n)")
+    [[ $r == 'o' ]] && color_print red "$base_mysqlcom -e '$sqlcomm_set_bgcolor'"
 }
 
 mount_database_for_prod() {
