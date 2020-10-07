@@ -71,6 +71,12 @@ get_val_from_conf() {
     echo "$script" | php
 }
 
+get_dolibarr_version() {
+    dolibarr_root=$(get_dolibarr_root)
+    htdocs=$(get_val_from_conf dolibarr_main_document_root)
+    grep 'DOL_VERSION' "$htdocs/filefunc.inc.php"
+}
+
 # Retourne l'utilisateur apache (généralement www-data)
 get_apache_user() {
     # afficher les infos des processus apache2 et httpd (les noms potentiels d’apache)
